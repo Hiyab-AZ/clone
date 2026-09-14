@@ -100,8 +100,12 @@ class DashboardSummaryView(APIView):
             'ocean_shipments': Shipment.objects.filter(transport_mode=Shipment.TransportMode.MULTIMODAL).count(),
             'air_shipments': Shipment.objects.filter(transport_mode=Shipment.TransportMode.AIR).count(),
             'trucks_in_transit': Shipment.objects.filter(
+<<<<<<< HEAD
                 transport_mode__in=[Shipment.TransportMode.UNIMODAL, Shipment.TransportMode.MULTIMODAL],
                 status=Shipment.Status.IN_TRANSIT,
+=======
+                transport_mode=Shipment.TransportMode.UNIMODAL, status=Shipment.Status.IN_TRANSIT,
+>>>>>>> 2c73160cd200ab2a3f50cc95dcca9a8d5f4d27fe
             ).count(),
             'esl_train': Shipment.objects.filter(transport_provider__icontains='ESL Train').count(),
             'esl_truck': Shipment.objects.filter(transport_provider__icontains='ESL Truck').count(),
@@ -148,7 +152,11 @@ class DashboardSummaryView(APIView):
         active_operations = MasterOperation.objects.filter(status__in=active_statuses).count()
         air_shipments = MasterOperation.objects.filter(transport_mode=MasterOperation.TransportMode.AIR).count()
         trucks_in_transit = MasterOperation.objects.filter(
+<<<<<<< HEAD
             transport_mode__in=[MasterOperation.TransportMode.UNIMODAL, MasterOperation.TransportMode.MULTIMODAL],
+=======
+            transport_mode=MasterOperation.TransportMode.UNIMODAL,
+>>>>>>> 2c73160cd200ab2a3f50cc95dcca9a8d5f4d27fe
             status=MasterOperation.Status.IN_PROGRESS,
         ).count()
 
