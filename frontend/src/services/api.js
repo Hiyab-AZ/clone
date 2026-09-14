@@ -129,6 +129,9 @@ export const dashboardService = {
   recentActivity: (limit = 15) => api.get('/dashboard/recent-activity/', { params: { limit } }),
   dailyReport: () => api.get('/dashboard/daily-report/'),
   calendar: ({ start, end }) => api.get('/dashboard/calendar/', { params: { start, end } }),
+  // Drill-down data for a dashboard card: shipments grouped by customer ->
+  // bill/operation -> individual containers.
+  grouped: (category) => api.get('/dashboard/grouped/', { params: { category } }),
 }
 
 export const notificationsService = {

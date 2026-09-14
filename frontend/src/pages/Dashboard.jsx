@@ -8,20 +8,22 @@ import RecentActivity from '../components/RecentActivity'
 import WeatherWidget from '../components/WeatherWidget'
 import StatusBoard from '../components/StatusBoard'
 import AnalyticsCharts from '../components/AnalyticsCharts'
+import GroupedDrilldownModal from '../components/GroupedDrilldownModal'
 
 const TILES = [
-  { key: 'total', label: 'Total Shipments', Icon: Package, status: null, source: 'shipments' },
+  { key: 'total', label: 'Total Shipments', Icon: Package, source: 'shipments', category: 'total' },
   // Sits next to Total Shipments on purpose: cargo that has arrived but has no
   // operation number yet, so it is invisible in every operation-numbered view.
-  { key: 'awaiting_registration', label: 'Awaiting Registration', Icon: ClipboardList, source: 'shipments', query: 'awaiting_registration=true' },
-  { key: 'active_operations', label: 'Active Operations', Icon: BarChart3, status: null, source: 'operations' },
-  { key: 'air_shipments', label: 'Air Shipments', Icon: Plane, status: null, source: 'operations' },
-  { key: 'trucks_in_transit', label: 'Trucks in Transit', Icon: Truck, to: '/master-operations?transport_mode=road&status=in_progress', source: 'operations' },
-  { key: 'at_customs', label: 'At Customs', status: 'at_customs', Icon: Building2, source: 'shipments' },
-  { key: 'factory_deliveries_today', label: 'Factory Deliveries Today', Icon: Factory, status: null, source: 'operations' },
-  { key: 'cancelled', label: 'Cancelled Orders', Icon: Ban, status: 'cancelled', source: 'shipments' },
+  { key: 'awaiting_registration', label: 'Awaiting Registration', Icon: ClipboardList, source: 'shipments', category: 'awaiting_registration' },
+  { key: 'active_operations', label: 'Active Operations', Icon: BarChart3, source: 'operations', category: 'active_operations' },
+  { key: 'air_shipments', label: 'Air Shipments', Icon: Plane, source: 'operations', category: 'air_shipments' },
+  { key: 'trucks_in_transit', label: 'Trucks in Transit', Icon: Truck, source: 'operations', category: 'trucks_in_transit' },
+  { key: 'at_customs', label: 'At Customs', Icon: Building2, source: 'shipments', category: 'at_customs' },
+  { key: 'factory_deliveries_today', label: 'Factory Deliveries Today', Icon: Factory, source: 'operations', category: 'factory_deliveries_today' },
+  { key: 'cancelled', label: 'Cancelled Orders', Icon: Ban, source: 'shipments', category: 'cancelled' },
   // Lives in the same grid as the rest. On its own it sat in a second grid, where
-  // auto-fit stretched the lone card across the full row.
+  // auto-fit stretched the lone card across the full row. Keeps its original
+  // behavior — links straight to the Customers page, no drill-down needed.
   { key: 'total_customers', label: 'Active Customers', Icon: Store, source: 'root', to: '/customers' },
 ]
 
@@ -39,6 +41,7 @@ function subtext(tileKey, summary) {
 export default function Dashboard() {
   const [summary, setSummary] = useState(null)
   const [error, setError] = useState('')
+  const [drilldown, setDrilldown] = useState(null) // { category, title } | null
 
   useEffect(() => {
     dashboardService
@@ -91,12 +94,32 @@ export default function Dashboard() {
                 tile.source === 'operations' ? summary.operations?.[tile.key]
                 : tile.source === 'root' ? summary[tile.key]
                 : summary.shipments[tile.key]
+
+              // Cards with a "category" drill down into the grouped modal.
+              // Only "Active Customers" keeps its original page-link behavior.
+              if (tile.category) {
+                return (
+                  <button
+                    key={tile.key}
+                    type="button"
+                    onClick={() => setDrilldown({ category: tile.category, title: tile.label })}
+                    className="kpi-card kpi-card-link"
+                    style={{
+                      textAlign: 'left', cursor: 'pointer',
+                      background: 'inherit', border: 'inherit', font: 'inherit',
+                      width: '100%', color: 'inherit', padding: 'inherit',
+                    }}
+                  >
+                    <div className="kpi-icon"><tile.Icon size={22} /></div>
+                    <div className="kpi-value">{value ?? 0}</div>
+                    <div className="kpi-label">{tile.label}</div>
+                    {sub && <div className="kpi-sub">{sub}</div>}
+                  </button>
+                )
+              }
+
               return (
-                <Link
-                  key={tile.key}
-                  to={tile.to ? tile.to : tile.query ? `/shipments?${tile.query}` : tile.status ? `/shipments?status=${tile.status}` : '/shipments'}
-                  className="kpi-card kpi-card-link"
-                >
+                <Link key={tile.key} to={tile.to} className="kpi-card kpi-card-link">
                   <div className="kpi-icon"><tile.Icon size={22} /></div>
                   <div className="kpi-value">{value ?? 0}</div>
                   <div className="kpi-label">{tile.label}</div>
@@ -107,6 +130,14 @@ export default function Dashboard() {
           </div>
 
         </>
+      )}
+
+      {drilldown && (
+        <GroupedDrilldownModal
+          category={drilldown.category}
+          title={drilldown.title}
+          onClose={() => setDrilldown(null)}
+        />
       )}
 
       <div style={{ marginBottom: 32 }}>
