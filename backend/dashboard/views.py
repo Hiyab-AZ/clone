@@ -100,7 +100,8 @@ class DashboardSummaryView(APIView):
             'ocean_shipments': Shipment.objects.filter(transport_mode=Shipment.TransportMode.MULTIMODAL).count(),
             'air_shipments': Shipment.objects.filter(transport_mode=Shipment.TransportMode.AIR).count(),
             'trucks_in_transit': Shipment.objects.filter(
-                transport_mode=Shipment.TransportMode.UNIMODAL, status=Shipment.Status.IN_TRANSIT,
+                transport_mode__in=[Shipment.TransportMode.UNIMODAL, Shipment.TransportMode.MULTIMODAL],
+                status=Shipment.Status.IN_TRANSIT,
             ).count(),
             'esl_train': Shipment.objects.filter(transport_provider__icontains='ESL Train').count(),
             'esl_truck': Shipment.objects.filter(transport_provider__icontains='ESL Truck').count(),
@@ -147,7 +148,7 @@ class DashboardSummaryView(APIView):
         active_operations = MasterOperation.objects.filter(status__in=active_statuses).count()
         air_shipments = MasterOperation.objects.filter(transport_mode=MasterOperation.TransportMode.AIR).count()
         trucks_in_transit = MasterOperation.objects.filter(
-            transport_mode=MasterOperation.TransportMode.UNIMODAL,
+            transport_mode__in=[MasterOperation.TransportMode.UNIMODAL, MasterOperation.TransportMode.MULTIMODAL],
             status=MasterOperation.Status.IN_PROGRESS,
         ).count()
 
@@ -361,6 +362,111 @@ class RecentActivityView(APIView):
             for e in events
         ]
         return Response(data)
+
+
+class DashboardGroupedView(APIView):
+    """
+    Drill-down data for a dashboard card: shipments in that category,
+    grouped by customer -> bill (or operation number for Active Operations)
+    -> the individual container rows underneath.
+
+    This exists because the sheet has one Shipment row per container, so a
+    flat list looks inflated (WANG's 20 containers on one bill would look
+    like 20 separate things). Grouping restores the real business view:
+    1 bill with 20 containers, expandable to see each container.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        category = request.query_params.get('category', 'total')
+        qs = Shipment.objects.select_related('customer').all()
+        group_by = 'bill'
+
+        if category == 'total':
+            pass
+        elif category == 'awaiting_registration':
+            qs = qs.filter(
+                operation_number__contains=AWAITING_REGISTRATION_MARKER,
+            ).exclude(status=Shipment.Status.CANCELLED)
+        elif category == 'active_operations':
+            active_statuses = [
+                Shipment.Status.PENDING, Shipment.Status.IN_TRANSIT, Shipment.Status.AT_CUSTOMS,
+                Shipment.Status.TECHNICAL_ISSUES, Shipment.Status.WAITING_CARGO_RELEASE,
+                Shipment.Status.FACTORY_UNLOADING,
+            ]
+            qs = qs.filter(status__in=active_statuses)
+            group_by = 'operation'
+        elif category == 'air_shipments':
+            qs = qs.filter(transport_mode=Shipment.TransportMode.AIR)
+        elif category == 'trucks_in_transit':
+            qs = qs.filter(
+                transport_mode__in=[Shipment.TransportMode.UNIMODAL, Shipment.TransportMode.MULTIMODAL],
+                status=Shipment.Status.IN_TRANSIT,
+            )
+        elif category == 'at_customs':
+            qs = qs.filter(status=Shipment.Status.AT_CUSTOMS)
+        elif category == 'factory_deliveries_today':
+            now = timezone.now()
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            shipment_ids = ShipmentEvent.objects.filter(
+                status=Shipment.Status.FACTORY_UNLOADING, timestamp__gte=today_start,
+            ).values_list('shipment_id', flat=True).distinct()
+            qs = qs.filter(id__in=shipment_ids)
+        elif category == 'cancelled':
+            qs = qs.filter(status=Shipment.Status.CANCELLED)
+        else:
+            return Response({'detail': 'Unknown category.'}, status=400)
+
+        qs = qs.order_by(
+            'bill_number' if group_by == 'bill' else 'operation_number',
+            'customer__company_name',
+            'id',
+        )
+
+        buckets = OrderedDict()
+        for s in qs:
+            cust_name = s.customer.company_name if s.customer_id else 'Unassigned'
+
+            if group_by == 'bill':
+                raw_key = s.bill_number
+                key = raw_key or f'__no_bill_{s.id}'
+                label = raw_key or 'No Bill Number'
+            else:
+                raw_key = s.operation_number
+                key = raw_key or f'__no_op_{s.id}'
+                label = raw_key or 'No Operation Number'
+
+            bucket = buckets.setdefault(key, {
+                'label': label, 'customer_name': cust_name, 'shipments': [],
+            })
+            bucket['shipments'].append({
+                'id': s.id,
+                'tracking_number': s.tracking_number,
+                'container_number': s.container_number,
+                'container_count': s.container_count,
+                'status': s.status,
+                'status_display': s.get_status_display(),
+                'operation_number': s.operation_number,
+                'bill_number': s.bill_number,
+                'destination_address': s.destination_address,
+                'estimated_delivery': s.estimated_delivery,
+            })
+
+        items = [
+            {
+                'label': b['label'],
+                'customer_name': b['customer_name'],
+                'container_count': len(b['shipments']),
+                'shipments': b['shipments'],
+            }
+            for b in buckets.values()
+        ]
+
+        return Response({
+            'category': category,
+            'group_label': 'Operation' if group_by == 'operation' else 'Bill',
+            'items': items,
+        })
 
 
 class CalendarView(APIView):
